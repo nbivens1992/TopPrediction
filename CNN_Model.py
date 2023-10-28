@@ -1,5 +1,6 @@
 import tensorflow as tf
 from keras import layers, models
+from keras.layers import Normalization
 import pandas as pd
 import os
 import numpy as np
@@ -11,7 +12,9 @@ from sklearn.model_selection import train_test_split
 # Global View (U-Net)
 def create_global_view():
     inputs = layers.Input(shape=(None, 1))  # Assuming the logs are 1D sequences
-    x = inputs
+    
+    # Adding a normalization layer
+    x = Normalization(axis=-2)(inputs) 
 
     # Encoding layer 1
     # HYPERPARAMETER: Adjust the number of filters (64) and kernel size (3)
@@ -60,8 +63,7 @@ def create_global_view():
 # Local View
 def create_local_view():
     inputs = layers.Input(shape=(None, 1))
-    x = inputs
-
+    x = Normalization(axis=-2)(inputs) 
     # Inception layers
     # HYPERPARAMETER: Adjust the number of filters (32) and kernel sizes (1 and 3)
     conv1 = layers.Conv1D(32, 1, padding="same")(x)
@@ -70,8 +72,9 @@ def create_local_view():
     return models.Model(inputs, concat)
 
 
+current_dir = os.getcwd()
 # Train your model here
-folder_path = "data/"
+folder_path = current_dir + "/Data/Well Log Data/"
 files = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
 
 dfs = []
@@ -79,34 +82,19 @@ for file in files:
     df = pd.read_csv(folder_path + file)
     dfs.append(df)
 
-
-# Concatenate all data for normalization
-all_data = pd.concat(dfs, ignore_index=True)
+train_dfs, val_dfs = train_test_split(dfs, test_size=0.2, random_state=42) # Here 20% of the data is kept for validation
 
 
-def normalize(df, feature_names):
-    for feature in feature_names:
-        mean = all_data[feature].mean()
-        std = all_data[feature].std()
-        df[feature] = (df[feature] - mean) / std
-    return df
+features = ["GR", "ILD", "DPHI"]
 
 
-features = ["VSH", "NPHI", "SW", "PHIF", "RHOB"]
-for i in range(len(dfs)):
-    dfs[i] = normalize(dfs[i], features)
+# Extract features and labels for training and validation sets
+X_train = [df[features].values for df in train_dfs]
+y_train = [df["PICK"].values for df in train_dfs]
 
-# For simplicity, extracting features and labels
-Xs = [df[features].values for df in dfs]
-ys = [df["top"].values for df in dfs]
+X_val = [df[features].values for df in val_dfs]
+y_val = [df["PICK"].values for df in val_dfs]
 
-
-# Combining all but the first well for training
-X_train = np.concatenate(Xs[1:])
-y_train = np.concatenate(ys[1:])
-
-X_val = Xs[0]
-y_val = ys[0]
 
 # Reshape for the model
 X_train = X_train.reshape((-1, len(features), 1))
@@ -119,6 +107,12 @@ y_val = y_val.reshape((-1, 1))
 
 global_view = create_global_view()
 local_view = create_local_view()
+
+# Adapt the normalization layer in global_view
+global_view.layers[1].adapt(X_train)
+
+# Adapt the normalization layer in local_view
+local_view.layers[1].adapt(X_train)
 
 combined = layers.Multiply()([global_view.output, local_view.output])
 
@@ -138,3 +132,23 @@ model.compile(optimizer="adam", loss="binary_crossentropy")
 history = model.fit(
     [X_train, X_train], y_train, epochs=50, validation_data=([X_val, X_val], y_val)
 )
+
+epochs = 50
+for epoch in range(epochs):
+    print(f"Epoch {epoch+1}/{epochs}")
+    
+    # Training
+    for i in range(len(X_train)):
+        X_train_well = X_train[i].reshape(1, X_train[i].shape[0], X_train[i].shape[1])
+        y_train_well = y_train[i].reshape(1, y_train[i].shape[0], 1)
+        model.train_on_batch([X_train_well, X_train_well], y_train_well)
+
+    # Validation (optional)
+    val_loss = []
+    for i in range(len(X_val)):
+        X_val_well = X_val[i].reshape(1, X_val[i].shape[0], X_val[i].shape[1])
+        y_val_well = y_val[i].reshape(1, y_val[i].shape[0], 1)
+        loss = model.test_on_batch([X_val_well, X_val_well], y_val_well)
+        val_loss.append(loss)
+    
+    print(f"Validation Loss: {np.mean(val_loss)}")
