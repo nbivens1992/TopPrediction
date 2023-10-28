@@ -1,0 +1,29 @@
+-------------------------------------------------------------
+DT curve prediction on multiple wells
+-------------------------------------------------------------
+Training:
+---------
+Use folder Aizen-Training
+It contains multiple csv files.
+Each csv file contains data from one well
+
+Input curves: NPHI, PHIF, RHOB, SW, VSH
+Curve to predict: DT
+
+Use the Aizen-Training folder to build and validate the model
+-------------------------------------------------------------
+Propagation1:
+-------------
+First set of wells with some issues into the data.
+These wells have a DT curve.
+You will propagate the model and predict DT
+You will be able to compare the DT Predicted vs. Original
+------------------------------------------------------
+Propagation2:
+-------------
+Second set of wells with mode problems into the data
+You can run the model to predict DT
+
+
+
+
